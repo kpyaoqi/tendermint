@@ -30,17 +30,25 @@ type ProofOperator interface {
 // and the last Merkle root will be verified with already known data
 type ProofOperators []ProofOperator
 
-func (poz ProofOperators) VerifyValue(root []byte, keypath string, value []byte) (err error) {
-	return poz.Verify(root, keypath, [][]byte{value})
+type ProofOpVerifier func(ProofOperator) error
+
+func (poz ProofOperators) VerifyValue(root []byte, keypath string, value []byte, verifiers ...ProofOpVerifier) (err error) {
+	return poz.Verify(root, keypath, [][]byte{value}, verifiers...)
 }
 
-func (poz ProofOperators) Verify(root []byte, keypath string, args [][]byte) (err error) {
+func (poz ProofOperators) Verify(root []byte, keypath string, args [][]byte, verifiers ...ProofOpVerifier) (err error) {
 	keys, err := KeyPathToKeys(keypath)
 	if err != nil {
 		return
 	}
 
 	for i, op := range poz {
+		for _, verifier := range verifiers {
+			if err := verifier(op); err != nil {
+				return err
+			}
+		}
+
 		key := op.GetKey()
 		if len(key) != 0 {
 			if len(keys) == 0 {
@@ -109,22 +117,22 @@ func (prt *ProofRuntime) DecodeProof(proof *Proof) (ProofOperators, error) {
 	return poz, nil
 }
 
-func (prt *ProofRuntime) VerifyValue(proof *Proof, root []byte, keypath string, value []byte) (err error) {
-	return prt.Verify(proof, root, keypath, [][]byte{value})
+func (prt *ProofRuntime) VerifyValue(proof *Proof, root []byte, keypath string, value []byte, verifiers ...ProofOpVerifier) (err error) {
+	return prt.Verify(proof, root, keypath, [][]byte{value}, verifiers...)
 }
 
 // TODO In the long run we'll need a method of classifcation of ops,
 // whether existence or absence or perhaps a third?
-func (prt *ProofRuntime) VerifyAbsence(proof *Proof, root []byte, keypath string) (err error) {
-	return prt.Verify(proof, root, keypath, nil)
+func (prt *ProofRuntime) VerifyAbsence(proof *Proof, root []byte, keypath string, verifiers ...ProofOpVerifier) (err error) {
+	return prt.Verify(proof, root, keypath, nil, verifiers...)
 }
 
-func (prt *ProofRuntime) Verify(proof *Proof, root []byte, keypath string, args [][]byte) (err error) {
+func (prt *ProofRuntime) Verify(proof *Proof, root []byte, keypath string, args [][]byte, verifiers ...ProofOpVerifier) (err error) {
 	poz, err := prt.DecodeProof(proof)
 	if err != nil {
 		return cmn.ErrorWrap(err, "decoding proof")
 	}
-	return poz.Verify(root, keypath, args)
+	return poz.Verify(root, keypath, args, verifiers...)
 }
 
 // DefaultProofRuntime only knows about Simple value
